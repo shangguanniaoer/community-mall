@@ -1,0 +1,179 @@
+from flask import Flask, render_template, redirect, url_for, request, session, flash
+from models import db, Product, Order
+from forms import LoginForm, ProductForm, OrderForm
+import os
+
+# 初始化 Flask 应用
+app = Flask(__name__)
+
+# 配置密钥和数据库
+app.config['SECRET_KEY'] = 'your-secret-key'
+# 检查是否存在 DATABASE_URL 环境变量
+if os.environ.get('DATABASE_URL'):
+    # 使用环境变量中的数据库 URL
+    # 处理 Render 等平台提供的 DATABASE_URL 格式（可能需要替换前缀）
+    database_url = os.environ.get('DATABASE_URL')
+    # 确保使用正确的 PostgreSQL 连接格式
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://')
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # 默认使用本地 SQLite
+    # 确保 data 文件夹存在
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    data_dir = os.path.join(base_dir, 'data')
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    db_path = os.path.join(data_dir, 'community.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# 初始化数据库
+db.init_app(app)
+
+# 创建数据库表
+with app.app_context():
+    db.create_all()
+
+# 检查是否需要创建初始管理员账号
+# 这里简化处理，使用固定的账号密码：admin/123456
+
+# 管理员登录验证装饰器
+def login_required(f):
+    def wrapper(*args, **kwargs):
+        if 'admin_logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    # 为了避免端点函数名称冲突，设置与原函数相同的名称
+    wrapper.__name__ = f.__name__
+    return wrapper
+
+# 管理员登录页面
+@app.route('/admin/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+        # 验证账号密码
+        if username == 'admin' and password == '123456':
+            session['admin_logged_in'] = True
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('用户名或密码错误', 'danger')
+    return render_template('admin/login.html', form=form)
+
+# 管理员登出
+@app.route('/admin/logout')
+def logout():
+    session.pop('admin_logged_in', None)
+    return redirect(url_for('login'))
+
+# 管理员仪表盘
+@app.route('/admin')
+@login_required
+def admin_dashboard():
+    return redirect(url_for('admin_products'))
+
+# 管理员商品管理
+@app.route('/admin/products', methods=['GET', 'POST'])
+@login_required
+def admin_products():
+    products = Product.query.all()
+    form = ProductForm()
+    if form.validate_on_submit():
+        # 添加新商品
+        product = Product(
+            name=form.name.data,
+            price=form.price.data,
+            stock=form.stock.data,
+            is_available=form.is_available.data,
+            description=form.description.data
+        )
+        db.session.add(product)
+        db.session.commit()
+        flash('商品添加成功', 'success')
+        return redirect(url_for('admin_products'))
+    return render_template('admin/products.html', products=products, form=form)
+
+# 编辑商品
+@app.route('/admin/products/edit/<int:product_id>', methods=['GET', 'POST'])
+@login_required
+def edit_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    form = ProductForm(obj=product)
+    if form.validate_on_submit():
+        product.name = form.name.data
+        product.price = form.price.data
+        product.stock = form.stock.data
+        # 库存为0时自动下架
+        if product.stock <= 0:
+            product.is_available = False
+        else:
+            product.is_available = form.is_available.data
+        product.description = form.description.data
+        db.session.commit()
+        flash('商品更新成功', 'success')
+        return redirect(url_for('admin_products'))
+    return render_template('admin/edit_product.html', form=form, product=product)
+
+# 删除商品
+@app.route('/admin/products/delete/<int:product_id>')
+@login_required
+def delete_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    db.session.delete(product)
+    db.session.commit()
+    flash('商品删除成功', 'success')
+    return redirect(url_for('admin_products'))
+
+# 管理员订单管理
+@app.route('/admin/orders')
+@login_required
+def admin_orders():
+    # 获取所有订单
+    orders = Order.query.order_by(Order.created_at.desc()).all()
+    # 按小区分组
+    community_orders = {}
+    for order in orders:
+        if order.community not in community_orders:
+            community_orders[order.community] = []
+        community_orders[order.community].append(order)
+    return render_template('admin/orders.html', community_orders=community_orders)
+
+# 用户端首页 - 展示上架商品
+@app.route('/')
+def home():
+    # 只显示上架且库存大于0的商品
+    products = Product.query.filter_by(is_available=True).filter(Product.stock > 0).all()
+    return render_template('user/home.html', products=products)
+
+# 用户端商品详情和下单页面
+@app.route('/product/<int:product_id>', methods=['GET', 'POST'])
+def product_detail(product_id):
+    product = Product.query.get_or_404(product_id)
+    form = OrderForm()
+    if form.validate_on_submit():
+        # 创建订单
+        order = Order(
+            name=form.name.data,
+            phone=form.phone.data,
+            address=form.address.data,
+            community=form.community.data,
+            is_group=form.is_group.data,
+            items=[{'product_id': product.id, 'quantity': 1, 'price': product.price}],
+            total_price=product.price
+        )
+        # 减少库存
+        product.stock -= 1
+        # 库存为0时自动下架
+        if product.stock <= 0:
+            product.is_available = False
+        db.session.add(order)
+        db.session.commit()
+        flash('订单提交成功', 'success')
+        return redirect(url_for('home'))
+    return render_template('user/product_detail.html', product=product, form=form)
+
+if __name__ == '__main__':
+    app.run(debug=True)
