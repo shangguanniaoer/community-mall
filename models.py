@@ -25,7 +25,8 @@ class Order(db.Model):
     address = db.Column(db.String(255), nullable=False)
     community = db.Column(db.String(100), nullable=False)
     is_group = db.Column(db.Boolean, nullable=False, default=False)
-    items = db.Column(db.JSON, nullable=False)  # 存储商品列表 [{product_id, quantity, price}]
+    # 使用 String 类型存储 JSON 字符串，以兼容更多数据库
+    items = db.Column(db.String(1000), nullable=False)  # 存储商品列表 [{product_id, quantity, price}]
     total_price = db.Column(db.Float, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     

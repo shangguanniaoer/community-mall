@@ -207,7 +207,14 @@ def admin_orders():
         orders = Order.query.order_by(Order.created_at.desc()).all()
         # 按小区分组
         community_orders = {}
+        import json
         for order in orders:
+            # 将 items 字符串转换回 JSON 对象
+            try:
+                order.items = json.loads(order.items)
+            except Exception as e:
+                print(f"解析订单 items 失败: {str(e)}")
+                order.items = []
             if order.community not in community_orders:
                 community_orders[order.community] = []
             community_orders[order.community].append(order)
@@ -236,13 +243,14 @@ def product_detail(product_id):
         if form.validate_on_submit():
             try:
                 # 创建订单
+                import json
                 order = Order(
                     name=form.name.data,
                     phone=form.phone.data,
                     address=form.address.data,
                     community=form.community.data,
                     is_group=form.is_group.data,
-                    items=[{'product_id': product.id, 'quantity': 1, 'price': product.price}],
+                    items=json.dumps([{'product_id': product.id, 'quantity': 1, 'price': product.price}]),
                     total_price=product.price
                 )
                 # 减少库存
