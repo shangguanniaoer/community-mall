@@ -41,6 +41,17 @@ def create_tables():
         print(f"数据库连接失败: {str(e)}")
         # 继续运行应用，即使数据库连接失败
 
+# 全局错误处理
+@app.errorhandler(500)
+def internal_server_error(error):
+    print(f"内部服务器错误: {str(error)}")
+    return "内部服务器错误，请稍后再试", 500
+
+# 404错误处理
+@app.errorhandler(404)
+def not_found_error(error):
+    return "页面不存在", 404
+
 # 检查是否需要创建初始管理员账号
 # 这里简化处理，使用固定的账号密码：admin/123456
 
@@ -85,101 +96,145 @@ def admin_dashboard():
 @app.route('/admin/products', methods=['GET', 'POST'])
 @login_required
 def admin_products():
-    products = Product.query.all()
+    try:
+        products = Product.query.all()
+    except Exception as e:
+        print(f"获取商品列表失败: {str(e)}")
+        products = []
     form = ProductForm()
     if form.validate_on_submit():
-        # 添加新商品
-        product = Product(
-            name=form.name.data,
-            price=form.price.data,
-            stock=form.stock.data,
-            is_available=form.is_available.data,
-            description=form.description.data
-        )
-        db.session.add(product)
-        db.session.commit()
-        flash('商品添加成功', 'success')
-        return redirect(url_for('admin_products'))
+        try:
+            # 添加新商品
+            product = Product(
+                name=form.name.data,
+                price=form.price.data,
+                stock=form.stock.data,
+                is_available=form.is_available.data,
+                description=form.description.data
+            )
+            db.session.add(product)
+            db.session.commit()
+            flash('商品添加成功', 'success')
+            return redirect(url_for('admin_products'))
+        except Exception as e:
+            print(f"添加商品失败: {str(e)}")
+            flash('商品添加失败，请稍后再试', 'danger')
+            db.session.rollback()
     return render_template('admin/products.html', products=products, form=form)
 
 # 编辑商品
 @app.route('/admin/products/edit/<int:product_id>', methods=['GET', 'POST'])
 @login_required
 def edit_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    form = ProductForm(obj=product)
-    if form.validate_on_submit():
-        product.name = form.name.data
-        product.price = form.price.data
-        product.stock = form.stock.data
-        # 库存为0时自动下架
-        if product.stock <= 0:
-            product.is_available = False
-        else:
-            product.is_available = form.is_available.data
-        product.description = form.description.data
-        db.session.commit()
-        flash('商品更新成功', 'success')
-        return redirect(url_for('admin_products'))
-    return render_template('admin/edit_product.html', form=form, product=product)
+    try:
+        product = Product.query.get_or_404(product_id)
+        form = ProductForm(obj=product)
+        if form.validate_on_submit():
+            try:
+                product.name = form.name.data
+                product.price = form.price.data
+                product.stock = form.stock.data
+                # 库存为0时自动下架
+                if product.stock <= 0:
+                    product.is_available = False
+                else:
+                    product.is_available = form.is_available.data
+                product.description = form.description.data
+                db.session.commit()
+                flash('商品更新成功', 'success')
+                return redirect(url_for('admin_products'))
+            except Exception as e:
+                print(f"更新商品失败: {str(e)}")
+                flash('商品更新失败，请稍后再试', 'danger')
+                db.session.rollback()
+        return render_template('admin/edit_product.html', form=form, product=product)
+    except Exception as e:
+        print(f"获取商品详情失败: {str(e)}")
+        return "商品不存在或已下架", 404
 
 # 删除商品
 @app.route('/admin/products/delete/<int:product_id>')
 @login_required
 def delete_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    db.session.delete(product)
-    db.session.commit()
-    flash('商品删除成功', 'success')
+    try:
+        product = Product.query.get_or_404(product_id)
+        try:
+            db.session.delete(product)
+            db.session.commit()
+            flash('商品删除成功', 'success')
+        except Exception as e:
+            print(f"删除商品失败: {str(e)}")
+            flash('商品删除失败，请稍后再试', 'danger')
+            db.session.rollback()
+    except Exception as e:
+        print(f"获取商品详情失败: {str(e)}")
+        flash('商品不存在或已下架', 'danger')
     return redirect(url_for('admin_products'))
 
 # 管理员订单管理
 @app.route('/admin/orders')
 @login_required
 def admin_orders():
-    # 获取所有订单
-    orders = Order.query.order_by(Order.created_at.desc()).all()
-    # 按小区分组
-    community_orders = {}
-    for order in orders:
-        if order.community not in community_orders:
-            community_orders[order.community] = []
-        community_orders[order.community].append(order)
+    try:
+        # 获取所有订单
+        orders = Order.query.order_by(Order.created_at.desc()).all()
+        # 按小区分组
+        community_orders = {}
+        for order in orders:
+            if order.community not in community_orders:
+                community_orders[order.community] = []
+            community_orders[order.community].append(order)
+    except Exception as e:
+        print(f"获取订单列表失败: {str(e)}")
+        community_orders = {}
     return render_template('admin/orders.html', community_orders=community_orders)
 
 # 用户端首页 - 展示上架商品
 @app.route('/')
 def home():
-    # 只显示上架且库存大于0的商品
-    products = Product.query.filter_by(is_available=True).filter(Product.stock > 0).all()
+    try:
+        # 只显示上架且库存大于0的商品
+        products = Product.query.filter_by(is_available=True).filter(Product.stock > 0).all()
+    except Exception as e:
+        print(f"获取商品列表失败: {str(e)}")
+        products = []
     return render_template('user/home.html', products=products)
 
 # 用户端商品详情和下单页面
 @app.route('/product/<int:product_id>', methods=['GET', 'POST'])
 def product_detail(product_id):
-    product = Product.query.get_or_404(product_id)
-    form = OrderForm()
-    if form.validate_on_submit():
-        # 创建订单
-        order = Order(
-            name=form.name.data,
-            phone=form.phone.data,
-            address=form.address.data,
-            community=form.community.data,
-            is_group=form.is_group.data,
-            items=[{'product_id': product.id, 'quantity': 1, 'price': product.price}],
-            total_price=product.price
-        )
-        # 减少库存
-        product.stock -= 1
-        # 库存为0时自动下架
-        if product.stock <= 0:
-            product.is_available = False
-        db.session.add(order)
-        db.session.commit()
-        flash('订单提交成功', 'success')
-        return redirect(url_for('home'))
-    return render_template('user/product_detail.html', product=product, form=form)
+    try:
+        product = Product.query.get_or_404(product_id)
+        form = OrderForm()
+        if form.validate_on_submit():
+            try:
+                # 创建订单
+                order = Order(
+                    name=form.name.data,
+                    phone=form.phone.data,
+                    address=form.address.data,
+                    community=form.community.data,
+                    is_group=form.is_group.data,
+                    items=[{'product_id': product.id, 'quantity': 1, 'price': product.price}],
+                    total_price=product.price
+                )
+                # 减少库存
+                product.stock -= 1
+                # 库存为0时自动下架
+                if product.stock <= 0:
+                    product.is_available = False
+                db.session.add(order)
+                db.session.commit()
+                flash('订单提交成功', 'success')
+                return redirect(url_for('home'))
+            except Exception as e:
+                print(f"提交订单失败: {str(e)}")
+                flash('订单提交失败，请稍后再试', 'danger')
+                db.session.rollback()
+        return render_template('user/product_detail.html', product=product, form=form)
+    except Exception as e:
+        print(f"获取商品详情失败: {str(e)}")
+        return "商品不存在或已下架", 404
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
