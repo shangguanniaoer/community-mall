@@ -40,6 +40,18 @@ except Exception as e:
     print(f"数据库连接失败: {str(e)}")
     # 继续运行应用，即使数据库连接失败
 
+# 测试数据库连接
+@app.route('/test-db')
+def test_db():
+    try:
+        with app.app_context():
+            # 测试数据库连接
+            db.session.execute('SELECT 1')
+        return "数据库连接正常"
+    except Exception as e:
+        print(f"数据库测试失败: {str(e)}")
+        return f"数据库测试失败: {str(e)}"
+
 # 全局错误处理
 @app.errorhandler(500)
 def internal_server_error(error):
@@ -103,6 +115,9 @@ def admin_products():
     form = ProductForm()
     if form.validate_on_submit():
         try:
+            # 打印表单数据，用于调试
+            print(f"表单数据: name={form.name.data}, price={form.price.data}, stock={form.stock.data}, is_available={form.is_available.data}, description={form.description.data}")
+            
             # 添加新商品
             product = Product(
                 name=form.name.data,
@@ -111,12 +126,25 @@ def admin_products():
                 is_available=form.is_available.data,
                 description=form.description.data
             )
+            
+            # 打印商品对象，用于调试
+            print(f"商品对象: {product}")
+            
             db.session.add(product)
+            # 打印添加后的会话状态，用于调试
+            print(f"会话状态: {db.session.new}")
+            
             db.session.commit()
+            # 打印提交后的会话状态，用于调试
+            print(f"提交后会话状态: {db.session.new}")
+            
             flash('商品添加成功', 'success')
             return redirect(url_for('admin_products'))
         except Exception as e:
             print(f"添加商品失败: {str(e)}")
+            # 打印详细的错误信息，包括堆栈跟踪
+            import traceback
+            traceback.print_exc()
             flash('商品添加失败，请稍后再试', 'danger')
             db.session.rollback()
     return render_template('admin/products.html', products=products, form=form)
