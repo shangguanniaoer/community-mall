@@ -31,15 +31,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # 初始化数据库
 db.init_app(app)
 
-# 延迟创建数据库表，在首次请求时创建
-@app.before_first_request
-def create_tables():
-    try:
+# 应用启动时创建数据库表
+try:
+    with app.app_context():
         db.create_all()
-        print("数据库连接成功，表结构已创建")
-    except Exception as e:
-        print(f"数据库连接失败: {str(e)}")
-        # 继续运行应用，即使数据库连接失败
+    print("数据库连接成功，表结构已创建")
+except Exception as e:
+    print(f"数据库连接失败: {str(e)}")
+    # 继续运行应用，即使数据库连接失败
 
 # 全局错误处理
 @app.errorhandler(500)
