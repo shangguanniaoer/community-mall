@@ -32,8 +32,13 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
 # 创建数据库表
-with app.app_context():
-    db.create_all()
+try:
+    with app.app_context():
+        db.create_all()
+    print("数据库连接成功，表结构已创建")
+except Exception as e:
+    print(f"数据库连接失败: {str(e)}")
+    # 继续运行应用，即使数据库连接失败
 
 # 检查是否需要创建初始管理员账号
 # 这里简化处理，使用固定的账号密码：admin/123456
@@ -176,4 +181,5 @@ def product_detail(product_id):
     return render_template('user/product_detail.html', product=product, form=form)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(debug=True, host='0.0.0.0', port=port)
